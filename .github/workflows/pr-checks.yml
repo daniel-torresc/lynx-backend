@@ -1,0 +1,104 @@
+name: PR Checks
+
+# Runs the same checks as .pre-commit-config.yaml on every pull request, so a PR
+# can't merge unless it passes them. Note the check-only variants below: the
+# pre-commit hooks autofix (ruff format / ruff check --fix), but CI must *fail*
+# instead of silently rewriting code.
+
+on:
+  pull_request:
+
+# Cancel an in-progress run when new commits are pushed to the same PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Lint, format & type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv (with cache) and Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: uv.lock is up to date
+        run: uv lock --check
+
+      - name: ruff (format)
+        run: uv run ruff format --check
+
+      - name: ruff (lint)
+        run: uv run ruff check
+
+      - name: ty (type check)
+        run: uv run ty check src
+
+  security:
+    name: Dependency & code security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv (with cache) and Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: pip-audit (dependency CVEs)
+        run: uv run pip-audit
+
+      - name: bandit (insecure code patterns)
+        run: uv run bandit -r src
+
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv (with cache) and Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      # Integration/e2e tests need real infrastructure, so only unit tests run here.
+      # TODO: remove the exit-5 tolerance once a tests/ suite exists — pytest returns
+      # exit code 5 ("no tests collected"), which is expected while the repo has no tests.
+      - name: pytest (unit)
+        run: |
+          code=0
+          uv run pytest -m "not integration and not e2e" || code=$?
+          if [ "$code" -eq 5 ]; then
+            echo "::warning::No tests collected yet — skipping. Remove this tolerance once tests exist."
+            exit 0
+          fi
+          exit "$code"
+
+  dependency-review:
+    name: Dependency review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Flags any dependency added in this PR that has a known vulnerability or an
+      # incompatible license. Complements pip-audit by acting on the PR diff.
+      - uses: actions/dependency-review-action@v4
