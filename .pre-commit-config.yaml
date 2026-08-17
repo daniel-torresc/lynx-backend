@@ -1,0 +1,46 @@
+# .pre-commit-config.yaml â€” fast checks run automatically on `git commit`.
+#
+# One-time setup:
+#   uv add --dev pre-commit
+#   uv run pre-commit install        # registers the git hook
+#
+# Run manually against all files any time:
+#   uv run pre-commit run --all-files
+#
+# These use `language: system` so they run the project's tools via uv â€”
+# the exact same commands as CI, so there's no version drift to chase.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: ruff (format)
+        entry: uv run ruff format
+        language: system
+        types: [python]
+
+      - id: ruff-lint
+        name: ruff (lint)
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+
+      - id: ty
+        name: ty (type check)
+        entry: uv run ty check src
+        language: system
+        types: [python]
+        pass_filenames: false   # ty checks the whole src/ tree, not just staged files
+
+      - id: pip-audit
+        name: pip-audit (dependency CVEs)
+        entry: uv run pip-audit
+        language: system
+        types: [python]
+        pass_filenames: false   # audits the locked dependency set, not staged files
+
+      - id: bandit
+        name: bandit (insecure code patterns)
+        entry: uv run bandit -r src
+        language: system
+        types: [python]
+        pass_filenames: false   # scans the whole src/ tree, same as CI
